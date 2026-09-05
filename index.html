@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Document Image Layout to PDF</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #e2e8f0;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+      align-items: center;
+      background: #ffffff;
+      padding: 12px 18px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+    .btn {
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      border-radius: 4px;
+    }
+    .btn:hover {
+      background: #e2e8f0;
+    }
+    .btn-primary {
+      background: #2563eb;
+      color: #ffffff;
+      border: none;
+      font-weight: 600;
+    }
+    .btn-primary:hover {
+      background: #1d4ed8;
+    }
+    .canvas-viewport {
+      max-width: 95vw;
+      max-height: 80vh;
+      overflow: auto;
+      background: #94a3b8;
+      padding: 20px;
+      border-radius: 8px;
+    }
+    .canvas-container-wrap {
+      background: #ffffff;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+      margin: 0 auto;
+    }
+    #cropModal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .modal-box {
+      background: #ffffff;
+      padding: 16px;
+      border-radius: 8px;
+      max-width: 600px;
+      width: 90%;
+    }
+    .crop-preview {
+      max-height: 400px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="toolbar">
+    <input type="file" id="imageInput" accept="image/*" />
+    
+    <label>Paper Size:
+      <select id="paperSizeSelect">
+        <option value="a4">A4</option>
+        <option value="a3">A3</option>
+      </select>
+    </label>
+
+    <label>Orientation: 
+      <select id="orientationSelect">
+        <option value="portrait">Portrait</option>
+        <option value="landscape">Landscape</option>
+      </select>
+    </label>
+
+    <button class="btn" id="alignHCenter">Align Center</button>
+    <button class="btn" id="alignLeftWithOther">Align Left to Previous</button>
+    <button class="btn" id="matchWidth">Match Previous Width</button>
+
+    <button class="btn btn-primary" id="exportPdfBtn">Export PDF</button>
+  </div>
+
+  <div class="canvas-viewport">
+    <div class="canvas-container-wrap">
+      <canvas id="pageCanvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Crop Modal -->
+  <div id="cropModal">
+    <div class="modal-box">
+      <div><img id="cropImage" class="crop-preview" /></div>
+      <div style="margin-top: 12px; text-align: right; gap: 8px; display: flex; justify-content: flex-end;">
+        <button class="btn" id="cancelCropBtn">Cancel</button>
+        <button class="btn btn-primary" id="confirmCropBtn">Place on Canvas</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const PAGE_DIMENSIONS = {
+      a4: { width: 595, height: 842 },
+      a3: { width: 842, height: 1191 }
+    };
+
+    let currentPaperSize = 'a4';
+    let currentOrientation = 'portrait';
+
+    function getDimensions() {
+      const base = PAGE_DIMENSIONS[currentPaperSize];
+      return currentOrientation === 'portrait'
+        ? { width: base.width, height: base.height }
+        : { width: base.height, height: base.width };
+    }
+
+    const initialDim = getDimensions();
+    const canvas = new fabric.Canvas('pageCanvas', {
+      backgroundColor: '#ffffff',
+      width: initialDim.width,
+      height: initialDim.height,
+      selection: true
+    });
+
+    function updateCanvasDimensions() {
+      const dim = getDimensions();
+      canvas.setWidth(dim.width);
+      canvas.setHeight(dim.height);
+      canvas.renderAll();
+    }
+
+    document.getElementById('paperSizeSelect').addEventListener('change', (e) => {
+      currentPaperSize = e.target.value;
+      updateCanvasDimensions();
+    });
+
+    document.getElementById('orientationSelect').addEventListener('change', (e) => {
+      currentOrientation = e.target.value;
+      updateCanvasDimensions();
+    });
+
+    // Cropper handling
+    let cropper = null;
+    const cropModal = document.getElementById('cropModal');
+    const cropImgEl = document.getElementById('cropImage');
+    const imageInput = document.getElementById('imageInput');
+
+    imageInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        cropImgEl.src = evt.target.result;
+        cropModal.style.display = 'flex';
+        if (cropper) cropper.destroy();
+        cropper = new Cropper(cropImgEl, { viewMode: 1 });
+      };
+      reader.readAsDataURL(file);
+    });
+
+    document.getElementById('cancelCropBtn').addEventListener('click', () => {
+      cropModal.style.display = 'none';
+      imageInput.value = '';
+    });
+
+    document.getElementById('confirmCropBtn').addEventListener('click', () => {
+      const croppedCanvas = cropper.getCroppedCanvas({ maxWidth: 2000, maxHeight: 2000 });
+      const imgData = croppedCanvas.toDataURL('image/jpeg', 0.95);
+
+      fabric.Image.fromURL(imgData, (oImg) => {
+        const dim = getDimensions();
+        oImg.scaleToWidth(dim.width * 0.45);
+
+        const existingImages = canvas.getObjects('image');
+        if (existingImages.length > 0) {
+          const prev = existingImages[existingImages.length - 1];
+          oImg.set({
+            left: prev.left,
+            top: prev.top + prev.getScaledHeight() + 20
+          });
+        } else {
+          oImg.set({ left: 40, top: 40 });
+        }
+
+        canvas.add(oImg);
+        canvas.setActiveObject(oImg);
+        canvas.renderAll();
+      });
+
+      cropModal.style.display = 'none';
+      imageInput.value = '';
+    });
+
+    // Smart magnetic snapping
+    const SNAP_TOLERANCE = 10;
+
+    canvas.on('object:moving', (e) => {
+      const target = e.target;
+      const targets = canvas.getObjects('image').filter(obj => obj !== target);
+      if (targets.length === 0) return;
+
+      const other = targets[targets.length - 1];
+      const targetWidth = target.getScaledWidth();
+      const targetHeight = target.getScaledHeight();
+      const otherWidth = other.getScaledWidth();
+      const otherHeight = other.getScaledHeight();
+
+      // Horizontal snapping
+      if (Math.abs(target.left - other.left) < SNAP_TOLERANCE) {
+        target.set({ left: other.left });
+      } else if (Math.abs((target.left + targetWidth) - (other.left + otherWidth)) < SNAP_TOLERANCE) {
+        target.set({ left: other.left + otherWidth - targetWidth });
+      } else if (Math.abs((target.left + targetWidth / 2) - (other.left + otherWidth / 2)) < SNAP_TOLERANCE) {
+        target.set({ left: other.left + (otherWidth / 2) - (targetWidth / 2) });
+      }
+
+      // Vertical snapping
+      if (Math.abs(target.top - other.top) < SNAP_TOLERANCE) {
+        target.set({ top: other.top });
+      } else if (Math.abs((target.top + targetHeight) - (other.top + otherHeight)) < SNAP_TOLERANCE) {
+        target.set({ top: other.top + otherHeight - targetHeight });
+      }
+    });
+
+    // Alignment controls
+    document.getElementById('alignHCenter').addEventListener('click', () => {
+      const active = canvas.getActiveObject();
+      if (!active) return;
+      active.centerH();
+      active.setCoords();
+      canvas.renderAll();
+    });
+
+    document.getElementById('alignLeftWithOther').addEventListener('click', () => {
+      const active = canvas.getActiveObject();
+      const others = canvas.getObjects('image').filter(o => o !== active);
+      if (!active || others.length === 0) return;
+      active.set({ left: others[0].left });
+      active.setCoords();
+      canvas.renderAll();
+    });
+
+    document.getElementById('matchWidth').addEventListener('click', () => {
+      const active = canvas.getActiveObject();
+      const others = canvas.getObjects('image').filter(o => o !== active);
+      if (!active || others.length === 0) return;
+      active.scaleToWidth(others[0].getScaledWidth());
+      active.setCoords();
+      canvas.renderAll();
+    });
+
+    // Delete keyboard shortcut
+    window.addEventListener('keydown', (e) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && canvas.getActiveObject()) {
+        canvas.remove(canvas.getActiveObject());
+        canvas.renderAll();
+      }
+    });
+
+    // Export PDF
+    document.getElementById('exportPdfBtn').addEventListener('click', () => {
+      canvas.discardActiveObject();
+      canvas.renderAll();
+
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({
+        orientation: currentOrientation,
+        unit: 'pt',
+        format: currentPaperSize
+      });
+
+      const dim = getDimensions();
+      const imgData = canvas.toDataURL({
+        format: 'jpeg',
+        quality: 1.0,
+        multiplier: 2
+      });
+
+      pdf.addImage(imgData, 'JPEG', 0, 0, dim.width, dim.height);
+      pdf.save(`layout_${currentPaperSize}_${currentOrientation}.pdf`);
+    });
+  </script>
+</body>
+</html>
