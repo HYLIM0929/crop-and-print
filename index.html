@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Document Image Layout to PDF</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" />
@@ -9,25 +10,46 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   
   <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #e2e8f0;
-      margin: 0;
-      padding: 20px;
+      background: #f1f5f9;
+      color: #1e293b;
       display: flex;
       flex-direction: column;
       align-items: center;
+      min-height: 100vh;
+      padding: 12px;
     }
     .toolbar {
       display: flex;
       flex-wrap: wrap;
-      gap: 12px;
-      margin-bottom: 16px;
+      gap: 8px;
+      margin-bottom: 12px;
       align-items: center;
+      justify-content: center;
       background: #ffffff;
-      padding: 12px 18px;
+      padding: 10px 14px;
       border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      width: 100%;
+      max-width: 900px;
+    }
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    select, input[type="file"] {
+      font-size: 13px;
+      padding: 6px 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      background: #fff;
     }
     .btn {
       padding: 6px 12px;
@@ -37,6 +59,7 @@
       border: 1px solid #cbd5e1;
       background: #f8fafc;
       border-radius: 4px;
+      transition: background 0.15s ease;
     }
     .btn:hover {
       background: #e2e8f0;
@@ -50,38 +73,55 @@
     .btn-primary:hover {
       background: #1d4ed8;
     }
+    .btn-danger {
+      background: #ef4444;
+      color: #ffffff;
+      border: none;
+    }
+    .btn-danger:hover {
+      background: #dc2626;
+    }
     .canvas-viewport {
-      max-width: 95vw;
-      max-height: 80vh;
-      overflow: auto;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      max-width: 1000px;
+      min-height: 50vh;
       background: #94a3b8;
-      padding: 20px;
+      padding: 16px;
       border-radius: 8px;
+      overflow: hidden;
     }
     .canvas-container-wrap {
       background: #ffffff;
-      box-shadow: 0 4px 14px rgba(0,0,0,0.2);
-      margin: 0 auto;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.25);
     }
     #cropModal {
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.7);
+      background: rgba(0,0,0,0.75);
       justify-content: center;
       align-items: center;
       z-index: 1000;
+      padding: 12px;
     }
     .modal-box {
       background: #ffffff;
-      padding: 16px;
+      padding: 14px;
       border-radius: 8px;
       max-width: 600px;
-      width: 90%;
+      width: 100%;
+    }
+    .crop-preview-wrapper {
+      max-height: 60vh;
+      width: 100%;
+      overflow: hidden;
     }
     .crop-preview {
-      max-height: 400px;
-      width: 100%;
+      max-width: 100%;
+      display: block;
     }
   </style>
 </head>
@@ -90,40 +130,43 @@
   <div class="toolbar">
     <input type="file" id="imageInput" accept="image/*" />
     
-    <label>Paper Size:
+    <div class="toolbar-group">
+      <label for="paperSizeSelect">Size:</label>
       <select id="paperSizeSelect">
         <option value="a4">A4</option>
         <option value="a3">A3</option>
       </select>
-    </label>
+    </div>
 
-    <label>Orientation: 
+    <div class="toolbar-group">
+      <label for="orientationSelect">Orient:</label>
       <select id="orientationSelect">
         <option value="portrait">Portrait</option>
         <option value="landscape">Landscape</option>
       </select>
-    </label>
+    </div>
 
-    <button class="btn" id="alignHCenter">Align Center</button>
-    <button class="btn" id="alignLeftWithOther">Align Left to Previous</button>
-    <button class="btn" id="matchWidth">Match Previous Width</button>
-
+    <button class="btn" id="alignHCenter">Center</button>
+    <button class="btn" id="alignLeftWithOther">Align Left</button>
+    <button class="btn" id="matchWidth">Match Width</button>
+    <button class="btn btn-danger" id="deleteActiveBtn">Delete</button>
     <button class="btn btn-primary" id="exportPdfBtn">Export PDF</button>
   </div>
 
-  <div class="canvas-viewport">
+  <div class="canvas-viewport" id="viewport">
     <div class="canvas-container-wrap">
       <canvas id="pageCanvas"></canvas>
     </div>
   </div>
 
-  <!-- Crop Modal -->
   <div id="cropModal">
     <div class="modal-box">
-      <div><img id="cropImage" class="crop-preview" /></div>
+      <div class="crop-preview-wrapper">
+        <img id="cropImage" class="crop-preview" />
+      </div>
       <div style="margin-top: 12px; text-align: right; gap: 8px; display: flex; justify-content: flex-end;">
         <button class="btn" id="cancelCropBtn">Cancel</button>
-        <button class="btn btn-primary" id="confirmCropBtn">Place on Canvas</button>
+        <button class="btn btn-primary" id="confirmCropBtn">Add to Canvas</button>
       </div>
     </div>
   </div>
@@ -137,36 +180,49 @@
     let currentPaperSize = 'a4';
     let currentOrientation = 'portrait';
 
-    function getDimensions() {
+    function getBaseDimensions() {
       const base = PAGE_DIMENSIONS[currentPaperSize];
       return currentOrientation === 'portrait'
         ? { width: base.width, height: base.height }
         : { width: base.height, height: base.width };
     }
 
-    const initialDim = getDimensions();
     const canvas = new fabric.Canvas('pageCanvas', {
       backgroundColor: '#ffffff',
-      width: initialDim.width,
-      height: initialDim.height,
-      selection: true
+      selection: true,
+      enableRetinaScaling: true
     });
 
-    function updateCanvasDimensions() {
-      const dim = getDimensions();
-      canvas.setWidth(dim.width);
-      canvas.setHeight(dim.height);
+    // Responsive fitting: scales the view without changing coordinate units
+    function resizeViewport() {
+      const viewport = document.getElementById('viewport');
+      const baseDim = getBaseDimensions();
+
+      const padding = 32;
+      const maxW = viewport.clientWidth - padding;
+      const maxH = window.innerHeight * 0.70;
+
+      const scale = Math.min(maxW / baseDim.width, maxH / baseDim.height, 1);
+
+      canvas.setDimensions({
+        width: baseDim.width * scale,
+        height: baseDim.height * scale
+      });
+      canvas.setZoom(scale);
       canvas.renderAll();
     }
 
+    window.addEventListener('resize', resizeViewport);
+    window.addEventListener('orientationchange', resizeViewport);
+
     document.getElementById('paperSizeSelect').addEventListener('change', (e) => {
       currentPaperSize = e.target.value;
-      updateCanvasDimensions();
+      resizeViewport();
     });
 
     document.getElementById('orientationSelect').addEventListener('change', (e) => {
       currentOrientation = e.target.value;
-      updateCanvasDimensions();
+      resizeViewport();
     });
 
     // Cropper handling
@@ -183,7 +239,7 @@
         cropImgEl.src = evt.target.result;
         cropModal.style.display = 'flex';
         if (cropper) cropper.destroy();
-        cropper = new Cropper(cropImgEl, { viewMode: 1 });
+        cropper = new Cropper(cropImgEl, { viewMode: 1, autoCropArea: 0.9 });
       };
       reader.readAsDataURL(file);
     });
@@ -198,8 +254,8 @@
       const imgData = croppedCanvas.toDataURL('image/jpeg', 0.95);
 
       fabric.Image.fromURL(imgData, (oImg) => {
-        const dim = getDimensions();
-        oImg.scaleToWidth(dim.width * 0.45);
+        const baseDim = getBaseDimensions();
+        oImg.scaleToWidth(baseDim.width * 0.5);
 
         const existingImages = canvas.getObjects('image');
         if (existingImages.length > 0) {
@@ -221,42 +277,42 @@
       imageInput.value = '';
     });
 
-    // Smart magnetic snapping
-    const SNAP_TOLERANCE = 10;
-
+    // Snapping Logic
+    const SNAP_TOLERANCE = 12;
     canvas.on('object:moving', (e) => {
       const target = e.target;
       const targets = canvas.getObjects('image').filter(obj => obj !== target);
       if (targets.length === 0) return;
 
       const other = targets[targets.length - 1];
-      const targetWidth = target.getScaledWidth();
-      const targetHeight = target.getScaledHeight();
-      const otherWidth = other.getScaledWidth();
-      const otherHeight = other.getScaledHeight();
+      const targetW = target.getScaledWidth();
+      const targetH = target.getScaledHeight();
+      const otherW = other.getScaledWidth();
+      const otherH = other.getScaledHeight();
 
-      // Horizontal snapping
+      // Horizontal
       if (Math.abs(target.left - other.left) < SNAP_TOLERANCE) {
         target.set({ left: other.left });
-      } else if (Math.abs((target.left + targetWidth) - (other.left + otherWidth)) < SNAP_TOLERANCE) {
-        target.set({ left: other.left + otherWidth - targetWidth });
-      } else if (Math.abs((target.left + targetWidth / 2) - (other.left + otherWidth / 2)) < SNAP_TOLERANCE) {
-        target.set({ left: other.left + (otherWidth / 2) - (targetWidth / 2) });
+      } else if (Math.abs((target.left + targetW) - (other.left + otherW)) < SNAP_TOLERANCE) {
+        target.set({ left: other.left + otherW - targetW });
+      } else if (Math.abs((target.left + targetW / 2) - (other.left + otherW / 2)) < SNAP_TOLERANCE) {
+        target.set({ left: other.left + (otherW / 2) - (targetW / 2) });
       }
 
-      // Vertical snapping
+      // Vertical
       if (Math.abs(target.top - other.top) < SNAP_TOLERANCE) {
         target.set({ top: other.top });
-      } else if (Math.abs((target.top + targetHeight) - (other.top + otherHeight)) < SNAP_TOLERANCE) {
-        target.set({ top: other.top + otherHeight - targetHeight });
+      } else if (Math.abs((target.top + targetH) - (other.top + otherH)) < SNAP_TOLERANCE) {
+        target.set({ top: other.top + otherH - targetH });
       }
     });
 
-    // Alignment controls
+    // Align controls
     document.getElementById('alignHCenter').addEventListener('click', () => {
       const active = canvas.getActiveObject();
       if (!active) return;
-      active.centerH();
+      const baseDim = getBaseDimensions();
+      active.set({ left: (baseDim.width - active.getScaledWidth()) / 2 });
       active.setCoords();
       canvas.renderAll();
     });
@@ -279,18 +335,40 @@
       canvas.renderAll();
     });
 
-    // Delete keyboard shortcut
-    window.addEventListener('keydown', (e) => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && canvas.getActiveObject()) {
-        canvas.remove(canvas.getActiveObject());
+    // Delete actions (mobile button + keyboard)
+    function deleteActive() {
+      const active = canvas.getActiveObject();
+      if (active) {
+        canvas.remove(active);
         canvas.renderAll();
       }
+    }
+    document.getElementById('deleteActiveBtn').addEventListener('click', deleteActive);
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') deleteActive();
     });
 
-    // Export PDF
+    // PDF Export
     document.getElementById('exportPdfBtn').addEventListener('click', () => {
       canvas.discardActiveObject();
+
+      // Reset zoom temporarily to export native uncompressed dimensions
+      const currentZoom = canvas.getZoom();
+      const baseDim = getBaseDimensions();
+
+      canvas.setZoom(1);
+      canvas.setDimensions({ width: baseDim.width, height: baseDim.height });
       canvas.renderAll();
+
+      const imgData = canvas.toDataURL({
+        format: 'jpeg',
+        quality: 1.0,
+        multiplier: 2
+      });
+
+      // Restore responsive zoom for the screen
+      canvas.setZoom(currentZoom);
+      resizeViewport();
 
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF({
@@ -299,16 +377,12 @@
         format: currentPaperSize
       });
 
-      const dim = getDimensions();
-      const imgData = canvas.toDataURL({
-        format: 'jpeg',
-        quality: 1.0,
-        multiplier: 2
-      });
-
-      pdf.addImage(imgData, 'JPEG', 0, 0, dim.width, dim.height);
+      pdf.addImage(imgData, 'JPEG', 0, 0, baseDim.width, baseDim.height);
       pdf.save(`layout_${currentPaperSize}_${currentOrientation}.pdf`);
     });
+
+    // Initial scale render
+    resizeViewport();
   </script>
 </body>
 </html>
